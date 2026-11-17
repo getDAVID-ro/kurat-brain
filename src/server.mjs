@@ -10,6 +10,7 @@ import {openDb} from './core/db.mjs';
 import {createStore, onChange, ValidationError} from './core/store.mjs';
 import {serve, scan, processEvents, publicPaths, syncStatus, cacheOf} from './core/sync.mjs';
 import {cloudEnabled, openCloud, blobBase} from './core/cloud.mjs';
+import {stare} from './core/stare.mjs';
 import {refreshGraph} from './core/graph.mjs';
 import {maybeAutoBackup} from './core/backup.mjs';
 import {startGitSync} from './core/gitsync.mjs';
@@ -177,7 +178,7 @@ export function createServer(db, {log = console.log, mediaDir = MEDIA_DIR, backu
           const orig = fs.existsSync(up) && fs.readdirSync(up).find(x => x.replace(/\.[^.]+$/, '') === base);
           if (orig) return sendFile(req, res, path.join(up, orig));
         }
-        const blob = cloud && blobBase(db);
+        const blob = blobBase();
         return blob ? send(res, 302, '', {location: `${blob}media/${p.slice(7)}`}) : send(res, 404, '');
       }
       if (p.startsWith('/media/')) {
@@ -186,9 +187,10 @@ export function createServer(db, {log = console.log, mediaDir = MEDIA_DIR, backu
         // pe Vercel: imaginile din depozit vin cu codul; cele încărcate din panou stau în Blob
         const b = bundleMedia && inside(bundleMedia, p.slice(7));
         if (b && fs.existsSync(b)) return sendFile(req, res, b, {immutable: url.searchParams.has('v')});
-        const base = cloud && blobBase(db);
+        const base = blobBase();
         return base ? send(res, 302, '', {location: base + 'media/' + p.slice(7), 'cache-control': 'public, max-age=3600'}) : send(res, 404, '');
       }
+      if (p === '/api/stare') return json(res, 200, stare());
       if (p === '/favicon.ico' || p === '/favicon.svg' || p === '/apple-touch-icon.png') return sendFile(req, res, path.join(STATIC_DIR, p.slice(1)));
       if (p === '/sitemap.xml') return indexing() ? sitemap(res) : send(res, 404, '');
       // fără indexare, robots.txt lasă roboții să citească paginile (ca să vadă noindex și să le scoată din index) și nu anunță harta site-ului

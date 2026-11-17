@@ -12,7 +12,13 @@ import crypto from 'node:crypto';
 
 export const databaseUrl = () => process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? null;
 export const cloudEnabled = () => !!databaseUrl() && process.env.BRAIN_CLOUD !== '0';
-export const blobEnabled = () => !!process.env.BLOB_READ_WRITE_TOKEN;
+// Blob-ul folosit: cât timp proiectul are DWF_BLOB_TOKEN (copia tokenului Blob al agenției, la transfer), citirile și scrierile
+// rămân în Blob-ul DWF; după ce clientul îl șterge și republică, site-ul trece pe Blob-ul lui (BLOB_READ_WRITE_TOKEN).
+export const blobToken = (env = process.env) => (env.DWF_BLOB_TOKEN?.trim() || env.BLOB_READ_WRITE_TOKEN?.trim() || null);
+export const blobEnabled = () => !!blobToken();
+const storeId = token => token?.split('_')[3] ?? '';
+// adresa publică a unui magazin Blob vine din id-ul lui (din token): https://<id>.public.blob.vercel-storage.com/
+export const blobBase = () => blobToken() ? `https://${storeId(blobToken()).toLowerCase()}.public.blob.vercel-storage.com/` : null;
 
 let client = null, clientUrl = null;
 export async function sqlFor(url = databaseUrl()) {
@@ -125,16 +131,14 @@ async function uploadMedia(db, mediaDir) {
     written.delete(file);
     if (!fs.existsSync(file)) continue;
     const key = `media/${path.relative(mediaDir, file).split(path.sep).join('/')}`;
-    const r = await put(key, fs.readFileSync(file), {access: 'public', addRandomSuffix: false, allowOverwrite: true});
-    const base = r.url.slice(0, r.url.length - key.length);
-    db.prepare("INSERT INTO meta (key, value) VALUES ('blob_base', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(base);
+    await put(key, fs.readFileSync(file), {access: 'public', addRandomSuffix: false, allowOverwrite: true, token: blobToken()});
   }
 }
-export const blobBase = db => db.prepare("SELECT value FROM meta WHERE key = 'blob_base'").get()?.value ?? null;
 
 // ———————————————————————————————————————————— sincronizarea unei instanțe cu Neon
 
 // La transfer: baza nouă (goală) se umple singură din baza veche, dacă BRAIN_IMPORT_DATABASE_URL e setat; altfel din seed.
+// (Imaginile din Blob se mută cu npm run blob:copy — scripts/blob-copy.mjs.)
 export async function openCloud(openDb, {file, seedFile, log = console.log}) {
   const sql = await sqlFor();
   await ensureSchema(sql);
@@ -154,32 +158,7 @@ export async function openCloud(openDb, {file, seedFile, log = console.log}) {
     catch { remote = await pull(sql); if (remote) { loadInto(db, remote.buf); version = remote.version; } }
   }
   const sync = Object.assign(createCloudSync(db, sql, {version, log}), {db});
-  await importBlobs(db, sync, {log}).catch(err => log('Blob: importul din magazinul vechi a eșuat:', err.message));
   return sync;
-}
-
-// La transfer: imaginile încărcate din panou se copiază din Blob-ul vechi (BRAIN_IMPORT_BLOB_TOKEN) în cel nou, o singură dată.
-async function importBlobs(db, sync, {log}) {
-  const oldToken = process.env.BRAIN_IMPORT_BLOB_TOKEN;
-  if (!oldToken || !blobEnabled() || oldToken === process.env.BLOB_READ_WRITE_TOKEN) return;
-  if (db.prepare("SELECT value FROM meta WHERE key = 'blob_imported'").get()) return;
-  const {list, put} = await import('@vercel/blob');
-  let cursor, n = 0, base = null;
-  do {
-    const page = await list({token: oldToken, cursor, limit: 1000});
-    for (const b of page.blobs) {
-      const res = await fetch(b.url);
-      if (!res.ok) continue;
-      const r = await put(b.pathname, Buffer.from(await res.arrayBuffer()), {access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: res.headers.get('content-type') ?? undefined});
-      base ??= r.url.slice(0, r.url.length - b.pathname.length);
-      n++;
-    }
-    cursor = page.hasMore ? page.cursor : undefined;
-  } while (cursor);
-  if (base) db.prepare("INSERT INTO meta (key, value) VALUES ('blob_base', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(base);
-  db.prepare("INSERT INTO meta (key, value) VALUES ('blob_imported', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(new Date().toISOString());
-  await sync.save('import Blob');
-  log(`Blob: ${n} fișiere copiate din magazinul vechi`);
 }
 
 export function createCloudSync(db, sql, {version, log = console.log, onReload = () => {}, mediaDir = null}) {

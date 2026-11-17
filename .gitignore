@@ -9,3 +9,6 @@ node_modules/
 
 # starea sincronizării automate cu GitHub (src/core/gitsync.mjs) stă în /data/, deci nu intră în depozit
 /seed/*.tmp*
+
+# credențialele trase cu vercel env pull (transferul stocării): nu intră niciodată în depozit
+.env*

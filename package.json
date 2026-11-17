@@ -13,7 +13,8 @@
     "import": "node scripts/import.mjs",
     "start": "node src/server.mjs",
     "test": "node --test --test-reporter=spec \"test/**/*.test.mjs\"",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "blob:copy": "node scripts/blob-copy.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.1",
