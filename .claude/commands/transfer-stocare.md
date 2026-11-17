@@ -4,7 +4,7 @@ description: Mută baza de date (Neon) și fișierele (Vercel Blob) ale site-ulu
 
 # Transferul stocării kurat.ro
 
-Rulezi asta pentru clientul kurat.ro, după ce DWF i-a transferat repo-ul GitHub `kurat-brain` și proiectul Vercel `kurat`. Baza Neon `kurat-db` (și magazinul Blob, dacă DWF a avut unul) au rămas în echipa Vercel a DWF (`dwf3`). Variabilele lor (`DATABASE_URL`, `BLOB_READ_WRITE_TOKEN` …) au venit cu proiectul și arată încă spre resursele DWF. Dacă ar rămâne așa, site-ul clientului ar scrie în continuare în contul DWF și ar pierde totul când DWF le șterge.
+Rulezi asta pentru clientul kurat.ro, după ce DWF i-a transferat repo-ul GitHub `kurat-brain` și proiectul Vercel `kurat`. Baza Neon `kurat-db-fra` (și magazinul Blob, dacă DWF a avut unul) au rămas în echipa Vercel a DWF (`dwf3`). Variabilele lor (`DATABASE_URL`, `BLOB_READ_WRITE_TOKEN` …) au venit cu proiectul și arată încă spre resursele DWF. Dacă ar rămâne așa, site-ul clientului ar scrie în continuare în contul DWF și ar pierde totul când DWF le șterge.
 
 Creezi echivalentele în echipa clientului, muți datele, legi site-ul de ele și verifici. **DWF șterge apoi resursele vechi; tu nu le ștergi niciodată.**
 
@@ -12,8 +12,8 @@ Contextul complet e în `docs/transfer-client.md`. Vorbește cu utilizatorul în
 
 ## Reguli
 
-- Nu afișa niciodată în întregime o parolă, un token sau o adresă de bază de date. Arată doar începutul și finalul, de exemplu `postgres://…@ep-…us-east-1…`.
-- Nu șterge și nu modifica resursele vechi ale DWF (Neon `kurat-db` și Blob-ul din echipa `dwf3`). Din ele doar citești.
+- Nu afișa niciodată în întregime o parolă, un token sau o adresă de bază de date. Arată doar începutul și finalul, de exemplu `postgres://…@ep-…eu-central-1…`.
+- Nu șterge și nu modifica resursele vechi ale DWF (Neon `kurat-db-fra` și Blob-ul din echipa `dwf3`). Din ele doar citești.
 - Credențialele stau temporar în `.env.transfer-vechi` și `.env.transfer-nou`, în rădăcina repo-ului (ignorate de git prin `.env*`). Le ștergi la final și nu le pui niciodată în git.
 - Publici doar cu `vercel redeploy` sau cu `git push`, niciodată cu `vercel --prod` din folder: acela ar urca și fișierele locale cu credențiale.
 - Dacă un pas nu merge cum e descris, oprește-te, spune ce ai văzut și întreabă. Nu improviza ocolișuri peste date.
@@ -68,7 +68,7 @@ Folosești `vercel env rm <NUME> <mediu> --yes`. Site-ul publicat nu se oprește
    ```
    vercel blob create-store kurat-media --access public --region fra1 --yes -e production -e preview -e development
    ```
-3. Dacă Neon e în `fra1`, pune funcțiile tot acolo, cu acordul utilizatorului: `"regions": ["fra1"]` în `vercel.json`, apoi commit.
+3. Funcțiile sunt deja în `fra1` (`"regions": ["fra1"]` în `vercel.json`). Dacă utilizatorul a ales altă regiune pentru Neon, schimbă și `regions` cu acordul lui, apoi commit.
 4. `vercel env pull .env.transfer-nou --environment=production --yes`. Verifici că apar noile `DATABASE_URL` și `BLOB_READ_WRITE_TOKEN`, diferite de cele vechi.
 
 ### 5. Baza de date
@@ -104,4 +104,4 @@ Nu e nevoie de `pg_dump`: site-ul copiază singur baza veche la prima pornire cu
 1. Șterge `.env.transfer-vechi` și `.env.transfer-nou`.
 2. Scrie-i utilizatorului un rezumat: ce s-a mutat, unde sunt resursele noi (numele, echipa, regiunea) și ce a rămas de făcut.
 3. Dă-i mesajul de trimis la DWF, gata de copiat:
-   > Transferul stocării kurat.ro e gata: baza Neon și fișierele Blob sunt în contul nostru și site-ul folosește resursele noi (verificat pe <data>). Puteți șterge din echipa DWF baza Neon „kurat-db” și magazinul Blob al Kurat, dacă există.
+   > Transferul stocării kurat.ro e gata: baza Neon și fișierele Blob sunt în contul nostru și site-ul folosește resursele noi (verificat pe <data>). Puteți șterge din echipa DWF baza Neon „kurat-db-fra” și magazinul Blob al Kurat, dacă există.

@@ -10,9 +10,9 @@
 
 | Resursă | Unde | Detalii |
 |---|---|---|
-| Repo | GitHub `getDAVID-ro/kurat-brain` (privat) | ramura de producție `main`; `main` publică singur pe Vercel |
+| Repo | GitHub `getDAVID-ro/kurat-brain` (trebuie făcut privat de un admin al organizației) | ramura de producție `main`; `main` publică singur pe Vercel |
 | Proiect Vercel | echipa `dwf3`, proiectul `kurat` | producție: https://kurat-eight.vercel.app |
-| Baza de date | Neon `kurat-db`, prin Vercel Marketplace (resursa `store_OyyzLGRzcPsagzV3`) | Washington (`iad1`, aceeași regiune cu funcțiile), planul Free; `DATABASE_URL`, `POSTGRES_*`, `PG*`, `NEON_PROJECT_ID` doar pe Production |
+| Baza de date | Neon `kurat-db-fra`, prin Vercel Marketplace (resursa `store_eMmpoytY7y59hnCG`) | Frankfurt (`fra1`, `eu-central-1`; funcțiile sunt tot în `fra1`, din `vercel.json`), planul Free; `DATABASE_URL`, `POSTGRES_*`, `PG*`, `NEON_PROJECT_ID` doar pe Production |
 | Fișiere | Vercel Blob: **încă niciunul** | echipa `dwf3` a atins limita de utilizare la 17.11.2026. Imaginile site-ului stau în repo (`media/`) și se publică odată cu codul. Încărcarea unei imagini noi din `/manage` de pe Vercel e refuzată, cu un mesaj clar, până există Blob |
 | Copia tokenului Blob | variabila `DWF_BLOB_TOKEN`, pe toate mediile | se pune doar dacă DWF creează un Blob pentru Kurat înainte de transfer: același token ca `BLOB_READ_WRITE_TOKEN`, sub alt nume, ca `npm run blob:copy` să poată citi din Blob-ul DWF și după ce clientul șterge `BLOB_READ_WRITE_TOKEN`. Id-ul magazinului se trece și în `src/core/stare.mjs` (`DWF_BLOB_STORES`) |
 | Panoul fără cont | variabila `BRAIN_OPEN_ACCESS=1`, pe Production | `/manage` se deschide oricui are adresa (cerut de DWF). Pentru a cere din nou autentificare, se șterge variabila. Primul administrator se creează atunci cu `BRAIN_SETUP_KEY` și `/manage/setup/?key=…` |
@@ -53,7 +53,7 @@ Cum folosește codul stocarea (`src/core/cloud.mjs`):
    ```
    https://vercel.com/claim-deployment?code=<code>&returnUrl=https%3A%2F%2Fkurat-eight.vercel.app
    ```
-   - Clientul îl deschide, intră în contul lui Vercel, alege echipa și apasă **Transfer**. Odată cu proiectul se mută baza Neon `kurat-db` și variabilele de mediu.
+   - Clientul îl deschide, intră în contul lui Vercel, alege echipa și apasă **Transfer**. Odată cu proiectul se mută baza Neon `kurat-db-fra` și variabilele de mediu.
    - Dacă linkul expiră, generați altul cu aceeași comandă.
    - **Varianta fără link:** Settings → General → **Transfer Project** (trebuie să fiți membru în echipa clientului). Atunci Neon nu se mută, iar clientul rulează `/transfer-stocare` (mai jos) în locul mesajului.
 3. **Domeniul:** la 17.11.2026 proiectul are doar adresele `*.vercel.app`. Dacă între timp s-a adăugat `kurat.ro` în echipa DWF: Domains → ⋯ → **Move**.
@@ -106,5 +106,5 @@ npx vercel switch dwf3
 ```
 
 - **Blob**, dacă a existat: `npx vercel blob delete-store <store_id>`. Dacă refuză ștergerea pentru că magazinul e încă legat de proiect: Storage → magazinul → Projects → Disconnect, apoi din nou comanda.
-- **Neon:** dacă s-a mutat cu linkul de claim, nu mai apare în `npx vercel integration list --all`. Dacă a rămas în `dwf3`: `npx vercel integration resource delete kurat-db --disconnect-all`. Integrarea Neon din echipa `dwf3` rămâne: o folosesc și celelalte proiecte.
+- **Neon:** dacă s-a mutat cu linkul de claim, nu mai apare în `npx vercel integration list --all`. Dacă a rămas în `dwf3`: `npx vercel integration resource delete kurat-db-fra --disconnect-all`. Integrarea Neon din echipa `dwf3` rămâne: o folosesc și celelalte proiecte.
 - DWF șterge copia locală `.env.transfer-dwf` și `.env.local`, care au credențialele vechi.
