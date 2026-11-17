@@ -59,6 +59,14 @@ export function createUser(db, {email, name, role = 'editor', password}) {
   return Number(lastInsertRowid);
 }
 
+// Primul administrator pe un server nou (Vercel): doar cât nu există niciun cont și doar cu cheia BRAIN_SETUP_KEY din mediu.
+export const needsSetup = db => !!process.env.BRAIN_SETUP_KEY && !db.prepare('SELECT 1 FROM users LIMIT 1').get();
+export function setupKeyOk(key) {
+  const want = process.env.BRAIN_SETUP_KEY ?? '';
+  const a = Buffer.from(String(key ?? '')), b = Buffer.from(want);
+  return want.length >= 16 && a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 export const userById = (db, id) => db.prepare('SELECT id, email, name, role, active, created_at FROM users WHERE id = ?').get(id) ?? null;
 
 // Limita încercărilor: cel mult 8 eșecuri pe IP în 15 minute.
@@ -115,6 +123,8 @@ export function currentUser(db, req) {
   }
   if (process.env.BRAIN_DEV_LOGIN === '1' && isLoopback(req.socket.remoteAddress) && !req.headers['x-forwarded-for'])
     return {id: 0, email: 'local@localhost', name: 'Local (fără parolă)', role: 'admin', active: 1, dev: true};
+  // panoul deschis oricui are adresa, fără cont (cerut explicit pentru serverul de pe Vercel): BRAIN_OPEN_ACCESS=1
+  if (process.env.BRAIN_OPEN_ACCESS === '1') return {id: 0, email: 'panou@kurat.ro', name: 'Panou (acces liber)', role: 'admin', active: 1, dev: true};
   return null;
 }
 

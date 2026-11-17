@@ -2,7 +2,7 @@
 import {createStore, ValidationError} from '../core/store.mjs';
 import {entity, hasEntity, titleOf, pathOf, fieldsOf, ENTITIES, RELATION_TYPES} from '../registry/entities.mjs';
 import {need, can, needApprovalFor, needsApproval, Forbidden, sameOrigin, login, logout, sessionCookie, clearCookie, storeUser,
-  createUser, randomPassword, ROLES} from '../auth/auth.mjs';
+  createUser, randomPassword, ROLES, startSession, needsSetup, setupKeyOk} from '../auth/auth.mjs';
 import {whereUsed, pageCounts} from '../core/whereused.mjs';
 import * as graph from '../core/graph.mjs';
 import {inferredGroups} from '../core/inferred.mjs';
@@ -17,6 +17,7 @@ import {validate, validationState} from '../core/validations.mjs';
 import {sniffMime} from '../core/store.mjs';
 import fs from 'node:fs';
 import nodePath from 'node:path';
+import {assertMediaWritable, noteMediaWrite} from '../core/cloud.mjs';
 
 async function rawBody(req, max = 15 * 1024 * 1024) {
   let size = 0; const chunks = [];
@@ -24,7 +25,8 @@ async function rawBody(req, max = 15 * 1024 * 1024) {
   if (!size) throw new HttpError(422, 'Fișier gol.');
   return Buffer.concat(chunks);
 }
-const writeFile = (f, b) => { fs.mkdirSync(nodePath.dirname(f), {recursive: true}); fs.writeFileSync(f, b); };
+// pe Vercel, fișierul nou merge și în Blob (cloud.mjs îl urcă înainte de răspuns); fără Blob conectat, încărcarea e refuzată clar
+const writeFile = (f, b) => { assertMediaWritable(); fs.mkdirSync(nodePath.dirname(f), {recursive: true}); fs.writeFileSync(f, b); noteMediaWrite(f); };
 
 export class HttpError extends Error { constructor(status, msg, extra = {}) { super(msg); this.status = status; Object.assign(this, extra); } }
 
@@ -52,6 +54,13 @@ export function createApi(db, {user: getUser, sse, mediaDir = 'media', backupDir
     const b = await body(req);
     const s = login(db, {email: b.email, password: b.password, ip: req.socket.remoteAddress, userAgent: req.headers['user-agent']});
     res.setHeader('set-cookie', sessionCookie(s, {secure: isSecure(req)}));
+    return {ok: true};
+  });
+  on('POST', '/setup', null, async ({req, res}) => {
+    const b = await body(req);
+    if (!needsSetup(db) || !setupKeyOk(b.key)) throw new HttpError(403, 'Configurarea nu mai e disponibilă sau cheia e greșită.');
+    const id = createUser(db, {email: b.email, name: b.name || b.email, role: 'admin', password: b.password});
+    res.setHeader('set-cookie', sessionCookie(startSession(db, id, {ip: req.socket.remoteAddress, userAgent: req.headers['user-agent']}), {secure: isSecure(req)}));
     return {ok: true};
   });
   on('POST', '/logout', null, ({req, res}) => { logout(db, req); res.setHeader('set-cookie', clearCookie({secure: isSecure(req)})); return {ok: true}; });

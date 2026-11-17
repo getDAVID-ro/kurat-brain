@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {hasEntity, entity} from '../registry/entities.mjs';
-import {currentUser, can} from '../auth/auth.mjs';
+import {currentUser, can, needsSetup, setupKeyOk} from '../auth/auth.mjs';
 import {createApi, createSse} from './api.mjs';
 import * as views from './views.mjs';
 import {renderPath} from '../site/pages.mjs';
@@ -42,7 +42,8 @@ export function createManage(db, {mediaDir = 'media', backupDir = 'data/backups'
     if (!p.endsWith('/') && !p.startsWith('/manage/previzualizare/')) return redirect(res, p + '/' + url.search), true;
 
     const u = user(req);
-    if (p === '/manage/login/') return html(res, 200, views.loginPage()), true;
+    if (p === '/manage/setup/') return needsSetup(db) && setupKeyOk(url.searchParams.get('key')) ? html(res, 200, views.setupPage()) : redirect(res, '/manage/login/'), true;
+    if (p === '/manage/login/') return html(res, 200, views.loginPage({setup: needsSetup(db)})), true;
     if (!u) return redirect(res, `/manage/login/?next=${encodeURIComponent(p + url.search)}`), true;
     if (!can(u, 'content.read')) return html(res, 403, views.forbiddenPage(db, u, 'Contul nu are acces la Brain.')), true;
 

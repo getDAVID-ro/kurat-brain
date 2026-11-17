@@ -118,13 +118,26 @@ ${syncBox()}<div class="side-foot"><div class="who"><span class="dot${sync.faile
 ${data ? json(data) : ''}<script src="${JS}" defer></script>${scripts.map(s => `<script src="${s === 'map' ? MAP : s}" defer></script>`).join('')}</body></html>`;
 }
 
-export function loginPage({error = null} = {}) {
+export function loginPage({error = null, setup = false} = {}) {
   return `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Autentificare — Brain Kurat</title>
 <meta name="robots" content="noindex"><link rel="stylesheet" href="${CSS}"></head><body class="login-body">
 <form class="card login" method="post" action="/api/manage/login" data-login><div class="brand big"><span class="mark">${KMARK}</span><span><b>Kurat</b><small>Brain · administrare</small></span></div>
 <label>Email<input name="email" type="email" autocomplete="username" required></label>
 <label>Parolă<input name="password" type="password" autocomplete="current-password" required></label>
-<button class="btn primary" type="submit">Intră</button><p class="msg" role="status">${error ? esc(error) : ''}</p></form>
+<button class="btn primary" type="submit">Intră</button><p class="msg" role="status">${error ? esc(error) : ''}</p>
+${setup ? '<p class="muted">Nu există încă niciun cont pe acest server. Primul administrator se creează din linkul de configurare (cu cheia din mediu).</p>' : ''}</form>
+<script src="${JS}" defer></script></body></html>`;
+}
+
+// Primul administrator pe un server nou (doar cu cheia de configurare, doar cât nu există niciun cont).
+export function setupPage() {
+  return `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Primul administrator — Brain Kurat</title>
+<meta name="robots" content="noindex"><link rel="stylesheet" href="${CSS}"></head><body class="login-body">
+<form class="card login" method="post" action="/api/manage/setup" data-setup><div class="brand big"><span class="mark">${KMARK}</span><span><b>Kurat</b><small>Primul administrator</small></span></div>
+<label>Nume<input name="name" autocomplete="name" required></label>
+<label>Email<input name="email" type="email" autocomplete="username" required></label>
+<label>Parolă (minim 10 caractere)<input name="password" type="password" autocomplete="new-password" minlength="10" required></label>
+<button class="btn primary" type="submit">Creează contul</button><p class="msg" role="status"></p></form>
 <script src="${JS}" defer></script></body></html>`;
 }
 

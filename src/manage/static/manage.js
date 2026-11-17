@@ -40,6 +40,15 @@
       location.href = new URLSearchParams(location.search).get('next') || '/manage/';
     } catch (err) { msg.textContent = err.message; }
   });
+  $('form[data-setup]')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target, msg = $('.msg', f);
+    if (!f.reportValidity()) return;
+    try {
+      await api('POST', '/setup', {key: new URLSearchParams(location.search).get('key'), name: f.name.value, email: f.email.value, password: f.password.value});
+      location.href = '/manage/';
+    } catch (err) { msg.textContent = err.message; }
+  });
   $('[data-logout]')?.addEventListener('click', async () => { await api('POST', '/logout'); location.href = '/manage/login/'; });
 
   // ———————————————————————— formularul unei entități
@@ -328,7 +337,7 @@
   }));
 
   // ———————————————————————— modificările live (SSE, §3.11)
-  if (!$('form[data-login]') && 'EventSource' in window) {
+  if (!$('form[data-login]') && !$('form[data-setup]') && 'EventSource' in window) {
     const es = new EventSource('/api/manage/events');
     const live = $('#live');
     es.addEventListener('change', ev => {

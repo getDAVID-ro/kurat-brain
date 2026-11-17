@@ -8,7 +8,8 @@ import {fileURLToPath} from 'node:url';
 import crypto from 'node:crypto';
 import {openDb} from './core/db.mjs';
 import {createStore, onChange, ValidationError} from './core/store.mjs';
-import {serve, scan, processEvents, publicPaths, syncStatus} from './core/sync.mjs';
+import {serve, scan, processEvents, publicPaths, syncStatus, cacheOf} from './core/sync.mjs';
+import {cloudEnabled, openCloud, blobBase} from './core/cloud.mjs';
 import {refreshGraph} from './core/graph.mjs';
 import {maybeAutoBackup} from './core/backup.mjs';
 import {startGitSync} from './core/gitsync.mjs';
@@ -33,8 +34,10 @@ const SECURITY = {
 };
 
 // autoBackup: verificarea orară a copiei zilnice; pornită doar de serverul real (nu și în teste).
-export function createServer(db, {log = console.log, mediaDir = MEDIA_DIR, backupDir = BACKUP_DIR, autoBackup = false} = {}) {
+// cloud: sincronizarea cu Neon (doar pe Vercel, cu DATABASE_URL); bundleMedia: imaginile venite cu codul, când mediaDir e altul (pe Vercel, /tmp)
+export function createServer(db, {log = console.log, mediaDir = MEDIA_DIR, backupDir = BACKUP_DIR, autoBackup = false, cloud = null, bundleMedia = null} = {}) {
   mediaDir = path.resolve(mediaDir);
+  if (cloud) { cloud.onReload(() => cacheOf(db).clear()); cloud.setMediaDir(mediaDir); }
   backupDir = path.resolve(backupDir);
   const backupCheck = () => {
     try { const b = maybeAutoBackup(db, {dir: backupDir, mediaDir}); if (b) log(`copie de siguranță automată: ${b.file} (${Math.round(b.size / 1024)} KB)`); return b; }
@@ -108,7 +111,7 @@ export function createServer(db, {log = console.log, mediaDir = MEDIA_DIR, backu
 
   async function lead(req, res) {
     // pe Vercel baza e o copie temporară (/tmp): o cerere s-ar pierde, deci vizitatorul e trimis la telefon, nu i se spune „trimis”
-    if (process.env.VERCEL) return json(res, 503, {error: 'Formularul nu funcționează în această previzualizare. Sună-ne la 0742 293 391 sau scrie-ne pe WhatsApp.'});
+    if (process.env.VERCEL && !cloud) return json(res, 503, {error: 'Formularul nu funcționează în această previzualizare. Sună-ne la 0742 293 391 sau scrie-ne pe WhatsApp.'});
     // scrierile venite din alt site sunt refuzate (§1.9)
     const origin = req.headers.origin;
     if (origin && new URL(origin).host !== req.headers.host) return json(res, 403, {error: 'Origine nepermisă.'});
@@ -141,7 +144,12 @@ export function createServer(db, {log = console.log, mediaDir = MEDIA_DIR, backu
       {'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600'});
   }
 
-  const server = http.createServer(async (req, res) => {
+  // cu Neon: citirile verifică dacă altă instanță a scris; scrierile trec prin lacăt și urcă noua copie înainte de răspuns
+  const server = http.createServer((req, res) => !cloud ? handle(req, res)
+    : req.method === 'GET' || req.method === 'HEAD'
+      ? cloud.fresh().catch(err => log('Neon: verificarea versiunii a eșuat:', err)).then(() => handle(req, res))
+      : cloud.write(req, res, handle));
+  async function handle(req, res) {
     const url = new URL(req.url, 'http://local');
     let p = decodeURIComponent(url.pathname);
     try {
@@ -161,11 +169,26 @@ export function createServer(db, {log = console.log, mediaDir = MEDIA_DIR, backu
       if (p.startsWith('/media/variants/')) {
         const v = inside(mediaDir, p.slice(7));
         if (v && fs.existsSync(v)) return sendFile(req, res, v, {immutable: url.searchParams.has('v')});
-        const base = path.basename(p).replace(/\.webp$/, ''), up = path.join(mediaDir, 'uploads');
-        const orig = fs.existsSync(up) && fs.readdirSync(up).find(x => x.replace(/\.[^.]+$/, '') === base);
-        return orig ? sendFile(req, res, path.join(up, orig)) : send(res, 404, '');
+        const bv = bundleMedia && inside(bundleMedia, p.slice(7));
+        if (bv && fs.existsSync(bv)) return sendFile(req, res, bv, {immutable: url.searchParams.has('v')});
+        const base = path.basename(p).replace(/\.webp$/, '');
+        for (const dir of [mediaDir, bundleMedia].filter(Boolean)) {
+          const up = path.join(dir, 'uploads');
+          const orig = fs.existsSync(up) && fs.readdirSync(up).find(x => x.replace(/\.[^.]+$/, '') === base);
+          if (orig) return sendFile(req, res, path.join(up, orig));
+        }
+        const blob = cloud && blobBase(db);
+        return blob ? send(res, 302, '', {location: `${blob}media/${p.slice(7)}`}) : send(res, 404, '');
       }
-      if (p.startsWith('/media/')) { const f = inside(mediaDir, p.slice(7)); return f ? sendFile(req, res, f, {immutable: url.searchParams.has('v')}) : send(res, 404, ''); }
+      if (p.startsWith('/media/')) {
+        const f = inside(mediaDir, p.slice(7));
+        if (f && fs.existsSync(f)) return sendFile(req, res, f, {immutable: url.searchParams.has('v')});
+        // pe Vercel: imaginile din depozit vin cu codul; cele încărcate din panou stau în Blob
+        const b = bundleMedia && inside(bundleMedia, p.slice(7));
+        if (b && fs.existsSync(b)) return sendFile(req, res, b, {immutable: url.searchParams.has('v')});
+        const base = cloud && blobBase(db);
+        return base ? send(res, 302, '', {location: base + 'media/' + p.slice(7), 'cache-control': 'public, max-age=3600'}) : send(res, 404, '');
+      }
       if (p === '/favicon.ico' || p === '/favicon.svg' || p === '/apple-touch-icon.png') return sendFile(req, res, path.join(STATIC_DIR, p.slice(1)));
       if (p === '/sitemap.xml') return indexing() ? sitemap(res) : send(res, 404, '');
       // fără indexare, robots.txt lasă roboții să citească paginile (ca să vadă noindex și să le scoată din index) și nu anunță harta site-ului
@@ -185,7 +208,7 @@ export function createServer(db, {log = console.log, mediaDir = MEDIA_DIR, backu
       log('eroare', req.method, p, err);
       if (!res.headersSent) send(res, 500, '<!doctype html><meta charset="utf-8"><title>Eroare</title><p>A apărut o eroare. Încearcă din nou.</p>', {'content-type': 'text/html; charset=utf-8'});
     }
-  });
+  }
   server.on('close', () => { off(); clearInterval(timer); if (backupTimer) clearInterval(backupTimer); manage.sse.close(); });
   return server;
 }
@@ -197,21 +220,29 @@ const onVercel = !!process.env.VERCEL;
 let server = null;
 
 if (isMain || onVercel) {
-  // Vercel: discul e doar pentru citire, deci Brain-ul rulează dintr-o copie a conținutului public (seed/brain.db) în /tmp.
-  // Copia se reface la fiecare pornire a funcției, deci modificările făcute acolo nu rămân; locul de lucru e serverul local.
+  // Vercel: discul e doar pentru citire, deci Brain-ul rulează dintr-o copie în /tmp.
+  //  • cu Neon (DATABASE_URL): copia vine din Neon și orice modificare se urcă înapoi (src/core/cloud.mjs) — panoul și formularele merg;
+  //  • fără Neon: copia vine din conținutul public (seed/brain.db) și modificările nu rămân.
   let dbFile = process.env.BRAIN_DB ?? 'data/brain.db';
-  if (onVercel && !process.env.BRAIN_DB) {
-    dbFile = path.join(os.tmpdir(), 'kurat-brain.db');
-    if (!fs.existsSync(dbFile)) fs.copyFileSync(new URL('../seed/brain.db', import.meta.url), dbFile);
+  const seedFile = fileURLToPath(new URL('../seed/brain.db', import.meta.url));
+  let cloud = null, db;
+  if (onVercel && !process.env.BRAIN_DB) dbFile = path.join(os.tmpdir(), 'kurat-brain.db');
+  if (onVercel && cloudEnabled()) {
+    cloud = await openCloud(openDb, {file: dbFile, seedFile});
+    db = cloud.db;
+  } else {
+    if (onVercel && !process.env.BRAIN_DB && !fs.existsSync(dbFile)) fs.copyFileSync(seedFile, dbFile);
+    db = openDb(dbFile);
   }
-  const db = openDb(dbFile);
   const needScan = db.prepare("SELECT value FROM meta WHERE key = 'scan_needed'").get()?.value === '1'
     || !db.prepare('SELECT 1 FROM page_index LIMIT 1').get();
   if (needScan) { const t = Date.now(); const r = scan(db); console.log(`scan la pornire: ${r.rendered} pagini în ${Date.now() - t} ms, ${r.failed.length} eșecuri`); }
   const s = processEvents(db);
   if (s.events) console.log(`la pornire: ${s.events} evenimente procesate`);
   const port = +(process.env.PORT ?? 3000);
-  server = createServer(db, {autoBackup: !onVercel, backupDir: onVercel ? path.join(os.tmpdir(), 'kurat-backups') : BACKUP_DIR});
+  server = createServer(db, {autoBackup: !onVercel, backupDir: onVercel ? path.join(os.tmpdir(), 'kurat-backups') : BACKUP_DIR,
+    // pe Vercel, imaginile noi se scriu în /tmp (apoi în Blob); cele din depozit se citesc de lângă cod
+    ...(onVercel ? {mediaDir: path.join(os.tmpdir(), 'kurat-media'), bundleMedia: MEDIA_DIR} : {}), cloud});
   // pe Vercel runtime-ul primește serverul prin exportul implicit și îl pornește singur; local, pornim noi
   if (!onVercel) server.listen(port, () => console.log(`kurat.ro din Brain: http://localhost:${port}`));
   // conținutul și imaginile ajung singure pe GitHub (doar serverul local; pe serverul clientului rămâne oprit)
