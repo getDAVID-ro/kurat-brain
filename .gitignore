@@ -12,3 +12,6 @@ node_modules/
 
 # credențialele trase cu vercel env pull (transferul stocării): nu intră niciodată în depozit
 .env*
+
+# legătura locală cu proiectul Vercel
+.vercel
